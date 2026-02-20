@@ -1,0 +1,6 @@
+cat > .gitattributes <<'EOF'
+*.sh text eol=lf
+EOF
+git add .gitattributes
+git commit -m "Force LF line endings for shell scripts"
+git push
