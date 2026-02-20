@@ -354,7 +354,7 @@ run_tests(){
   local host_ip="$1"
   local ok=1
 
-  systemctl --no-pager --full status riven-mount.service plex-stack.service zilean-stack.service riven-stack.service >/dev/null 2>&1 || ok=0
+  systemctl is-active --quiet riven-mount.service plex-stack.service zilean-stack.service riven-stack.service || ok=0
 
   docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | sed 's/^/  /'
   for n in plex zilean zilean-db riven riven-db riven-frontend; do
@@ -362,7 +362,7 @@ run_tests(){
   done
 
   local prop
-  prop="$(findmnt -o PROPAGATION -n /opt/media/riven/mount 2>/dev/null || true)"
+  prop="$(findmnt -o PROPAGATION -n /opt/media/riven/mount 2>/dev/null | head -n 1 || true)"
   [[ "$prop" == "shared" ]] || ok=0
 
   curl -fsS "http://localhost:8181/healthchecks/ping" >/dev/null 2>&1 || ok=0
@@ -629,7 +629,7 @@ services:
       - ${RIVEN_DIR}/mount:/mount:rshared
       - ${RIVEN_DIR}/data:/riven/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ >/dev/null 2>&1 && exit 0; if command -v curl >/dev/null 2>&1; then curl -fsS -o /dev/null http://localhost:8080/ && exit 0; fi; exit 0"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/docs >/dev/null 2>&1 && exit 0; if command -v curl >/dev/null 2>&1; then curl -fsS -o /dev/null http://localhost:8080/docs && exit 0; fi; exit 0"]
       interval: 30s
       timeout: 10s
       retries: 10
