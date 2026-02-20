@@ -790,4 +790,154 @@ if [[ "$MODE" == "install" ]]; then
 
   API_KEY="$(gen_hex32)"
   AUTH_SECRET="$(gen_b64)"
-  RIVEN_DB_PASS="$(gen_pw_
+  RIVEN_DB_PASS="$(gen_pw24)"
+  ZILEAN_DB_PASS="$(gen_pw24)"
+
+  cat >"$PLEX_ENV" <<ENV
+TZ=Europe/London
+PLEX_CLAIM=${PLEX_CLAIM_TOKEN}
+PLEX_UID=${HOST_UID}
+PLEX_GID=${HOST_GID}
+ENV
+
+  cat >"$ZILEAN_ENV" <<ENV
+TZ=Europe/London
+ZILEAN_DB_USER=postgres
+ZILEAN_DB_PASS=${ZILEAN_DB_PASS}
+ZILEAN_DB_NAME=zilean
+ENV
+
+  cat >"$RIVEN_ENV" <<ENV
+TZ=Europe/London
+HOST_IP=${HOST_IP}
+
+API_KEY=${API_KEY}
+AUTH_SECRET=${AUTH_SECRET}
+
+RIVEN_DB_USER=riven
+RIVEN_DB_PASS=${RIVEN_DB_PASS}
+RIVEN_DB_NAME=riven
+
+REALDEBRID_API_KEY=${RD_KEY}
+PLEX_TOKEN=
+
+RIVEN_FILESYSTEM_MOUNT_PATH=/mount
+RIVEN_FILESYSTEM_CACHE_DIR=/dev/shm/riven-cache
+RIVEN_FILESYSTEM_CACHE_MAX_SIZE_MB=10240
+RIVEN_FILESYSTEM_CACHE_EVICTION=LRU
+RIVEN_FILESYSTEM_CACHE_METRICS=true
+
+RIVEN_UPDATERS_LIBRARY_PATH=/mount
+ENV
+
+  apply_ranking_preset "$RIVEN_ENV"
+
+else
+  log "Reconfigure mode: updating inputs and (optionally) regenerating secrets..."
+  [[ -f "$RIVEN_ENV" ]] || die "Missing $RIVEN_ENV - run install first."
+
+  cur_host_ip="$(env_get "$RIVEN_ENV" HOST_IP || true)"
+  cur_rd="$(env_get "$RIVEN_ENV" REALDEBRID_API_KEY || true)"
+
+  HOST_IP="$(read_nonempty "Host IP for ORIGIN (LAN IP of this server)" "${cur_host_ip:-$DEFAULT_IP}")"
+  RD_KEY="$(read_nonempty "Real-Debrid API key/token" "${cur_rd:-}")"
+
+  env_set "$RIVEN_ENV" "HOST_IP" "$HOST_IP"
+  env_set "$RIVEN_ENV" "REALDEBRID_API_KEY" "$RD_KEY"
+
+  if [[ "$(read_yesno "Do you want to re-claim Plex (requires new claim token)?" "n")" == "y" ]]; then
+    PLEX_CLAIM_TOKEN="$(read_nonempty "Plex claim token (from plex.tv/claim)" "")"
+    env_set "$PLEX_ENV" "PLEX_CLAIM" "$PLEX_CLAIM_TOKEN"
+    env_set "$RIVEN_ENV" "PLEX_TOKEN" ""
+  fi
+
+  if [[ "$(read_yesno "Do you want to regenerate Riven API key and frontend AUTH_SECRET?" "n")" == "y" ]]; then
+    env_set "$RIVEN_ENV" "API_KEY" "$(gen_hex32)"
+    env_set "$RIVEN_ENV" "AUTH_SECRET" "$(gen_b64)"
+  fi
+
+  if [[ "$(read_yesno "Do you want to regenerate DB passwords (will break existing DBs unless wiped)?" "n")" == "y" ]]; then
+    env_set "$RIVEN_ENV" "RIVEN_DB_PASS" "$(gen_pw24)"
+    env_set "$ZILEAN_ENV" "ZILEAN_DB_PASS" "$(gen_pw24)"
+    echo "NOTE: Existing Postgres data dirs will keep old passwords unless wiped:"
+    echo "  /opt/media/riven/db and /opt/media/zilean/db"
+  fi
+
+  if [[ "$(read_yesno "Do you want to change ranking preset now?" "y")" == "y" ]]; then
+    apply_ranking_preset "$RIVEN_ENV"
+  fi
+fi
+
+# Ensure Plex UID/GID stays current
+env_set "$PLEX_ENV" "PLEX_UID" "$HOST_UID"
+env_set "$PLEX_ENV" "PLEX_GID" "$HOST_GID"
+
+# ----------------------------
+# Bring up Plex -> claim -> extract token -> clear claim -> then Zilean -> Riven
+# ----------------------------
+log "Starting Plex..."
+systemctl start plex-stack.service
+
+PREFS_PATH="${MEDIA_ROOT}/plex/config/Library/Application Support/Plex Media Server/Preferences.xml"
+plex_token="$(env_get "$RIVEN_ENV" PLEX_TOKEN || true)"
+
+if [[ -z "$plex_token" ]]; then
+  log "Waiting for Plex token (PlexOnlineToken) to appear after claim..."
+  token=""
+  for _ in $(seq 1 90); do
+    token="$(get_plex_token_from_prefs "$PREFS_PATH" || true)"
+    [[ -n "$token" ]] && break
+    sleep 2
+  done
+
+  if [[ -z "$token" ]]; then
+    echo ""
+    echo "Could not automatically read PlexOnlineToken from:"
+    echo "  $PREFS_PATH"
+    echo ""
+    echo "Do this:"
+    echo "  1) Open Plex: http://$(env_get "$RIVEN_ENV" HOST_IP):32400/web"
+    echo "  2) Ensure server is claimed/logged in"
+    echo "  3) Then run:"
+    echo "       grep -oP 'PlexOnlineToken=\"\\K[^\"]+' \"$PREFS_PATH\" | head -n1"
+    echo "  4) Put it into: $RIVEN_ENV as PLEX_TOKEN=..."
+    echo "Then re-run:"
+    echo "  sudo bash $0 --reconfigure"
+    exit 1
+  fi
+
+  log "Plex token extracted. Saving to Riven env and clearing Plex claim..."
+  env_set "$RIVEN_ENV" "PLEX_TOKEN" "$token"
+  env_set "$PLEX_ENV" "PLEX_CLAIM" ""
+  ( cd "${MEDIA_ROOT}/plex/compose" && docker compose up -d ) >/dev/null 2>&1 || true
+else
+  log "PLEX_TOKEN already present in Riven env; skipping token extraction."
+  env_set "$PLEX_ENV" "PLEX_CLAIM" ""
+fi
+
+log "Starting Zilean..."
+systemctl start zilean-stack.service
+
+log "Starting Riven..."
+systemctl start riven-stack.service
+
+# ----------------------------
+# Post-install: summary + optional tests
+# ----------------------------
+HOST_IP_FINAL="$(env_get "$RIVEN_ENV" HOST_IP || echo "$DEFAULT_IP")"
+
+echo ""
+echo "Services should now be up. Open:"
+echo "  Plex:     http://${HOST_IP_FINAL}:32400/web"
+echo "  Riven UI: http://${HOST_IP_FINAL}:3000"
+echo "  Zilean:   http://${HOST_IP_FINAL}:8181"
+echo ""
+echo "Recovery command (if FUSE gets stuck):"
+echo "  sudo /usr/local/sbin/media-reset.sh"
+echo ""
+
+if [[ "$(read_yesno "Run post-install tests now?" "y")" == "y" ]]; then
+  run_tests "$HOST_IP_FINAL" || true
+fi
+
+log "Done."
