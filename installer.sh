@@ -366,7 +366,7 @@ run_tests(){
   [[ "$prop" == "shared" ]] || ok=0
 
   curl -fsS "http://localhost:8181/healthchecks/ping" >/dev/null 2>&1 || ok=0
-  curl -fsSI "http://localhost:8080/" >/dev/null 2>&1 || ok=0
+  curl -fsSI "http://localhost:8080/docs" >/dev/null 2>&1 || ok=0
   curl -fsSI "http://localhost:32400/web" >/dev/null 2>&1 || ok=0
 
   docker exec -i plex sh -lc 'ls -la /mount >/dev/null 2>&1' || ok=0
@@ -1021,5 +1021,6 @@ main(){
       ;;
   esac
 }
+
 
 main "${1:-}"
