@@ -363,13 +363,20 @@ fix_db_permissions(){
 
 # Ranking preset choice (kept for UX). Actual application is done via Settings API.
 choose_ranking_preset(){
-  echo "Select a ranking/quality preset:"
-  echo "  1) Max Quality  — prefers Remux, best audio (TrueHD\/Atmos), HDR\/DV; enables 4K"
-  echo "  2) Balanced     — mix of quality\/size; enables 4K but less aggressive"
-  echo "  3) 1080p HQ     — no 4K; prefers high-quality 1080p"
-  echo "  4) Saver        — smaller files; no 4K; discourages remux"
+  # Print menu to the actual terminal (not captured by $(...))
+  cat >/dev/tty <<'EOF'
+
+Select a ranking/quality preset:
+  1) Max Quality  — prefers Remux, best audio (TrueHD/Atmos), HDR/DV; enables 4K
+  2) Balanced     — mix of quality/size; enables 4K but less aggressive
+  3) 1080p HQ     — no 4K; prefers high-quality 1080p
+  4) Saver        — smaller files; no 4K; discourages remux
+EOF
+
   local choice
-  read -r -p "Enter 1-4 [1]: " choice
+  # Read from the terminal as well (safe even when stdout is captured)
+  read -r -p "Enter 1-4 [1]: " choice </dev/tty
+  # Return ONLY the selection on stdout
   echo "${choice:-1}"
 }
 
