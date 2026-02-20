@@ -363,7 +363,6 @@ fix_db_permissions(){
 
 # Ranking preset choice (kept for UX). Actual application is done via Settings API.
 choose_ranking_preset(){
-  echo "${choice:-1}"
   echo "Select a ranking/quality preset:"
   echo "  1) Max Quality  — prefers Remux, best audio (TrueHD\/Atmos), HDR\/DV; enables 4K"
   echo "  2) Balanced     — mix of quality\/size; enables 4K but less aggressive"
