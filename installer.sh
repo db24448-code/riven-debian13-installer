@@ -563,7 +563,7 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=${PLEX_COMPOSE}
 ExecStart=/usr/bin/docker compose up -d
-ExecStop=/usr/bin/docker compose down
+ExecStop=/usr/bin/docker compose stop
 
 [Install]
 WantedBy=multi-user.target
@@ -583,7 +583,7 @@ RemainAfterExit=yes
 WorkingDirectory=${ZILEAN_COMPOSE}
 ExecStartPre=${net_pre}
 ExecStart=/usr/bin/docker compose up -d
-ExecStop=/usr/bin/docker compose down
+ExecStop=/usr/bin/docker compose stop
 
 [Install]
 WantedBy=multi-user.target
@@ -603,7 +603,7 @@ RemainAfterExit=yes
 WorkingDirectory=${RIVEN_COMPOSE}
 ExecStartPre=${net_pre}
 ExecStart=/usr/bin/docker compose up -d
-ExecStop=/usr/bin/docker compose down
+ExecStop=/usr/bin/docker compose stop
 
 [Install]
 WantedBy=multi-user.target
