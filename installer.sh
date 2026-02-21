@@ -695,6 +695,45 @@ ensure_plex_web_connectivity(){
 }
 
 start_plex_and_extract_token(){
+wait_plex_ready(){
+  log "Waiting for Plex to be ready (identity + library sections)..."
+  local prefs token tries=90
+  prefs="${PLEX_DIR}/config/Library/Application Support/Plex Media Server/Preferences.xml"
+
+  # wait for identity endpoint
+  for _ in $(seq 1 $tries); do
+    curl -fsS http://127.0.0.1:32400/identity >/dev/null 2>&1 && break
+    sleep 2
+  done
+
+  # wait for token to exist
+  token=""
+  for _ in $(seq 1 $tries); do
+    token="$(grep -oP 'PlexOnlineToken="\K[^"]+' "$prefs" 2>/dev/null | head -n 1 || true)"
+    [[ -n "$token" ]] && break
+    sleep 2
+  done
+
+  # wait for libraries to show (Movies/TV Shows)
+  for _ in $(seq 1 $tries); do
+    curl -fsS "http://127.0.0.1:32400/library/sections?X-Plex-Token=${token}" 2>/dev/null \
+      | grep -qE 'title="Movies"|title="TV Shows"' && return 0
+    sleep 2
+  done
+
+  return 1
+}
+
+ensure_plex_boot_stable(){
+  if wait_plex_ready; then
+    log "Plex ready."
+    return 0
+  fi
+
+  log "Plex not ready after wait; restarting Plex once..."
+  docker restart plex >/dev/null 2>&1 || true
+  wait_plex_ready || log "Plex still not ready (continuing anyway)."
+}
   log "Starting Plex and extracting PlexOnlineToken..."
   systemctl start plex-stack.service
 
@@ -722,6 +761,7 @@ start_plex_and_extract_token(){
 
 start_all(){
   start_plex_and_extract_token
+  ensure_plex_boot_stable
   ensure_plex_web_connectivity
   systemctl start zilean-stack.service
   systemctl start riven-stack.service
