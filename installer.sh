@@ -686,26 +686,28 @@ ensure_plex_web_connectivity(){
     return 0
   fi
 
-  # Stop Plex cleanly before editing prefs
   systemctl stop plex-stack.service 2>/dev/null || true
 
-  # Ensure secureConnections="1" and customConnections="http://<host_ip>:32400"
-  perl -0777 -i -pe '
+  # NOTE: env var must be set BEFORE perl, otherwise perl thinks it's a filename
+  PLEX_CUSTOM_IP="$host_ip" perl -0777 -i -pe '
     my $ip = $ENV{PLEX_CUSTOM_IP};
     if ($ip) {
+      # secureConnections="1"
       if (s/\ssecureConnections=\"[^\"]*\"/ secureConnections=\"1\"/) { }
       else { s/(<Preferences\b)/$1 secureConnections=\"1\"/ }
 
+      # customConnections="http://<ip>:32400"
       my $cc = "http://".$ip.":32400";
       if (s/\scustomConnections=\"[^\"]*\"/ customConnections=\"$cc\"/) { }
       else { s/(<Preferences\b)/$1 customConnections=\"$cc\"/ }
-}
-  ' "$prefs" PLEX_CUSTOM_IP="$host_ip"
+    }
+  ' "$prefs"
 
   systemctl start plex-stack.service 2>/dev/null || true
 }
+
 wait_plex_ready(){
-  log "Waiting for Plex to be ready (identity + library sections)..."
+  log "Waiting for Plex to be ready (identity + token)..."
   local prefs token tries=90
   prefs="${PLEX_DIR}/config/Library/Application Support/Plex Media Server/Preferences.xml"
 
@@ -719,17 +721,7 @@ wait_plex_ready(){
   token=""
   for _ in $(seq 1 $tries); do
     token="$(get_plex_token_from_prefs "$prefs" 2>/dev/null || true)"
-    [[ -n "$token" ]] && break
-    sleep 2
-  done
-  [[ -n "$token" ]] || return 1
-
-  # wait for libraries to show (Movies/TV Shows) - best effort
-  for _ in $(seq 1 $tries); do
-    if curl -fsS "http://127.0.0.1:32400/library/sections?X-Plex-Token=${token}" 2>/dev/null \
-      | grep -qE 'title="Movies"|title="TV Shows"'; then
-      return 0
-    fi
+    [[ -n "$token" ]] && return 0
     sleep 2
   done
 
