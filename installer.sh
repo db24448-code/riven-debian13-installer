@@ -393,6 +393,8 @@ services:
       TZ: \${TZ:-Europe/London}
       VERSION: docker
       PLEX_CLAIM: \${PLEX_CLAIM:-}
+      HOST_IP: \${HOST_IP:-192.168.1.250}
+      ADVERTISE_IP: "https://\${HOST_IP}:32400/,http://\${HOST_IP}:32400/"
       PUID: \${HOST_UID:-1000}
       PGID: \${HOST_GID:-1000}
       HOST_IP: \${HOST_IP:-192.168.1.250}
@@ -831,8 +833,8 @@ apply_riven_settings_api(){
   # ---- UPDATERS (Plex library updates) ----
   log "Applying Plex updater settings via API..."
   curl -fsS -H "x-api-key: ${api_key}" -H "content-type: application/json" \
-    --data-binary @- \
-    http://localhost:8080/api/v1/settings/set/updaters <<JSON
+  --data-binary @- \
+  http://localhost:8080/api/v1/settings/set/updaters <<JSON
 {
   "updaters": {
     "library_path": "/mount",
@@ -840,24 +842,24 @@ apply_riven_settings_api(){
       "enabled": true,
       "url": "http://${host_ip}:32400",
       "token": "${plex_token}"
-}
-}
+    }
+  }
 }
 JSON
 
   # ---- CONTENT (Plex Watchlist RSS) ----
   log "Applying Plex Watchlist settings via API..."
   curl -fsS -H "x-api-key: ${api_key}" -H "content-type: application/json" \
-    --data-binary @- \
-    http://localhost:8080/api/v1/settings/set/content <<JSON
+  --data-binary @- \
+  http://localhost:8080/api/v1/settings/set/content <<JSON
 {
   "content": {
     "plex_watchlist": {
       "enabled": true,
       "update_interval": 60,
       "rss": ["${rss}"]
-}
-}
+    }
+  }
 }
 JSON
 
