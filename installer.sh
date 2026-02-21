@@ -673,6 +673,27 @@ ENV
   env_set "${RIVEN_ENV}" "RIVEN_RANKING_PRESET_CHOICE" "${preset}"
 }
 
+ensure_plex_web_connectivity(){
+  log "Ensuring Plex Web can reliably bind to this server (secureConnections + customConnections)..."
+  local prefs ip
+  prefs="/config/Library/Application Support/Plex Media Server/Preferences.xml"
+  ip="0 0env_get "" HOST_IP || detect_host_ip)"
+
+  [[ -f "" ]] || { log "Plex prefs not found yet, skipping connectivity patch."; return 0; }
+
+  systemctl stop plex-stack.service 2>/dev/null || true
+
+  perl -0777 -i -pe "
+    if (s/\\ssecureConnections=\\\"[^\\\"]*\\\"/ secureConnections=\\\"1\\\"/) { }
+    else { s/(<Preferences\\b)/\\ secureConnections=\\\"1\\\"/ }
+
+    if (s/\\scustomConnections=\\\"[^\\\"]*\\\"/ customConnections=\\\"http:\\/\\/"."".":32400\\\"/) { }
+    else { s/(<Preferences\\b)/\\ customConnections=\\\"http:\\/\\/"."".":32400\\\"/ }
+  " ""
+
+  systemctl start plex-stack.service 2>/dev/null || true
+}
+
 start_plex_and_extract_token(){
   log "Starting Plex and extracting PlexOnlineToken..."
   systemctl start plex-stack.service
@@ -701,6 +722,7 @@ start_plex_and_extract_token(){
 
 start_all(){
   start_plex_and_extract_token
+  ensure_plex_web_connectivity
   systemctl start zilean-stack.service
   systemctl start riven-stack.service
 }
