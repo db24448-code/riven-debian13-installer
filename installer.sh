@@ -987,6 +987,9 @@ do_reset(){
     inline_reset
     install_reset_script
   fi
+# Post-reset Plex stabilization (prevents Plex Web flipping to + Your Media)
+  ensure_plex_boot_stable || true
+  ensure_plex_web_connectivity || true
 }
 
 do_wipe_db(){
