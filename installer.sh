@@ -395,6 +395,8 @@ services:
       PLEX_CLAIM: \${PLEX_CLAIM:-}
       PUID: \${HOST_UID:-1000}
       PGID: \${HOST_GID:-1000}
+      HOST_IP: \${HOST_IP:-192.168.1.250}
+      ADVERTISE_IP: "https://\${HOST_IP}:32400/,http://\${HOST_IP}:32400/"
     volumes:
       - ${PLEX_DIR}/config:/config
       - ${RIVEN_DIR}/mount:/mount:rslave
@@ -629,6 +631,7 @@ configure_install(){
 
   cat >"${PLEX_ENV}" <<ENV
 TZ=Europe/London
+HOST_IP=${host_ip}
 PLEX_CLAIM=${plex_claim}
 HOST_UID=${uid}
 HOST_GID=${gid}
@@ -782,7 +785,6 @@ ensure_plex_boot_stable(){
 start_all(){
   start_plex_and_extract_token
   ensure_plex_boot_stable
-  ensure_plex_web_connectivity
   systemctl start zilean-stack.service
   systemctl start riven-stack.service
 }
@@ -1009,7 +1011,6 @@ do_reset(){
   fi
 # Post-reset Plex stabilization (prevents Plex Web flipping to + Your Media)
   ensure_plex_boot_stable || true
-  ensure_plex_web_connectivity || true
 }
 
 do_wipe_db(){
@@ -1034,6 +1035,7 @@ do_reconfigure(){
   host_ip="$(read_nonempty "Host IP (LAN IP of this server)" "${cur_host_ip}")"
   rd_key="$(read_nonempty "Real-Debrid API key/token" "${cur_rd}")"
   env_set "${RIVEN_ENV}" "HOST_IP" "${host_ip}"
+  env_set "${PLEX_ENV}" "HOST_IP" "${host_ip}"
   env_set "${RIVEN_ENV}" "REALDEBRID_API_KEY" "${rd_key}"
 
   # baked default; allow override
