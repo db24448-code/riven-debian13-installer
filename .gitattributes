@@ -1,6 +1,5 @@
-cat > .gitattributes <<'EOF'
+# Normalize text files and enforce LF in repo
+* text=auto
+
+# Shell scripts must be LF (prevents bash\r issues)
 *.sh text eol=lf
-EOF
-git add .gitattributes
-git commit -m "Force LF line endings for shell scripts"
-git push

@@ -397,8 +397,6 @@ services:
       ADVERTISE_IP: "https://\${HOST_IP}:32400/,http://\${HOST_IP}:32400/"
       PUID: \${HOST_UID:-1000}
       PGID: \${HOST_GID:-1000}
-      HOST_IP: \${HOST_IP:-192.168.1.250}
-      ADVERTISE_IP: "https://\${HOST_IP}:32400/,http://\${HOST_IP}:32400/"
     volumes:
       - ${PLEX_DIR}/config:/config
       - ${RIVEN_DIR}/mount:/mount:rslave
@@ -771,17 +769,6 @@ start_plex_and_extract_token(){
   else
     env_set "${PLEX_ENV}" "PLEX_CLAIM" ""
   fi
-}
-
-ensure_plex_boot_stable(){
-  if wait_plex_ready; then
-    log "Plex ready."
-    return 0
-  fi
-
-  log "Plex not ready after wait; restarting Plex once..."
-  docker restart plex >/dev/null 2>&1 || true
-  wait_plex_ready || log "Plex still not ready (continuing anyway)."
 }
 
 start_all(){
