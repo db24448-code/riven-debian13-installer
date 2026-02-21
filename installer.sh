@@ -675,26 +675,35 @@ ENV
 
 ensure_plex_web_connectivity(){
   log "Ensuring Plex Web can reliably bind to this server (secureConnections + customConnections)..."
-  local prefs ip
-  prefs="/config/Library/Application Support/Plex Media Server/Preferences.xml"
-  ip="0 0env_get "" HOST_IP || detect_host_ip)"
 
-  [[ -f "" ]] || { log "Plex prefs not found yet, skipping connectivity patch."; return 0; }
+  local prefs host_ip
+  prefs="${PLEX_DIR}/config/Library/Application Support/Plex Media Server/Preferences.xml"
+  host_ip="$(env_get "${RIVEN_ENV}" HOST_IP 2>/dev/null || true)"
+  [[ -n "$host_ip" ]] || host_ip="$(detect_host_ip)"
 
+  if [[ ! -f "$prefs" ]]; then
+    log "Plex prefs not found yet ($prefs); skipping connectivity patch."
+    return 0
+  fi
+
+  # Stop Plex cleanly before editing prefs
   systemctl stop plex-stack.service 2>/dev/null || true
 
-  perl -0777 -i -pe "
-    if (s/\\ssecureConnections=\\\"[^\\\"]*\\\"/ secureConnections=\\\"1\\\"/) { }
-    else { s/(<Preferences\\b)/\\ secureConnections=\\\"1\\\"/ }
+  # Ensure secureConnections="1" and customConnections="http://<host_ip>:32400"
+  perl -0777 -i -pe '
+    my $ip = $ENV{PLEX_CUSTOM_IP};
+    if ($ip) {
+      if (s/\ssecureConnections=\"[^\"]*\"/ secureConnections=\"1\"/) { }
+      else { s/(<Preferences\b)/$1 secureConnections=\"1\"/ }
 
-    if (s/\\scustomConnections=\\\"[^\\\"]*\\\"/ customConnections=\\\"http:\\/\\/"."".":32400\\\"/) { }
-    else { s/(<Preferences\\b)/\\ customConnections=\\\"http:\\/\\/"."".":32400\\\"/ }
-  " ""
+      my $cc = "http://".$ip.":32400";
+      if (s/\scustomConnections=\"[^\"]*\"/ customConnections=\"$cc\"/) { }
+      else { s/(<Preferences\b)/$1 customConnections=\"$cc\"/ }
+}
+  ' "$prefs" PLEX_CUSTOM_IP="$host_ip"
 
   systemctl start plex-stack.service 2>/dev/null || true
 }
-
-start_plex_and_extract_token(){
 wait_plex_ready(){
   log "Waiting for Plex to be ready (identity + library sections)..."
   local prefs token tries=90
@@ -709,15 +718,18 @@ wait_plex_ready(){
   # wait for token to exist
   token=""
   for _ in $(seq 1 $tries); do
-    token="$(grep -oP 'PlexOnlineToken="\K[^"]+' "$prefs" 2>/dev/null | head -n 1 || true)"
+    token="$(get_plex_token_from_prefs "$prefs" 2>/dev/null || true)"
     [[ -n "$token" ]] && break
     sleep 2
   done
+  [[ -n "$token" ]] || return 1
 
-  # wait for libraries to show (Movies/TV Shows)
+  # wait for libraries to show (Movies/TV Shows) - best effort
   for _ in $(seq 1 $tries); do
-    curl -fsS "http://127.0.0.1:32400/library/sections?X-Plex-Token=${token}" 2>/dev/null \
-      | grep -qE 'title="Movies"|title="TV Shows"' && return 0
+    if curl -fsS "http://127.0.0.1:32400/library/sections?X-Plex-Token=${token}" 2>/dev/null \
+      | grep -qE 'title="Movies"|title="TV Shows"'; then
+      return 0
+    fi
     sleep 2
   done
 
@@ -734,13 +746,16 @@ ensure_plex_boot_stable(){
   docker restart plex >/dev/null 2>&1 || true
   wait_plex_ready || log "Plex still not ready (continuing anyway)."
 }
+
+start_plex_and_extract_token(){
   log "Starting Plex and extracting PlexOnlineToken..."
   systemctl start plex-stack.service
 
   local prefs_path token host_ip
   prefs_path="${PLEX_DIR}/config/Library/Application Support/Plex Media Server/Preferences.xml"
-  token="$(env_get "${RIVEN_ENV}" PLEX_TOKEN || true)"
-  host_ip="$(env_get "${RIVEN_ENV}" HOST_IP || echo "$(detect_host_ip)")"
+  token="$(env_get "${RIVEN_ENV}" PLEX_TOKEN 2>/dev/null || true)"
+  host_ip="$(env_get "${RIVEN_ENV}" HOST_IP 2>/dev/null || true)"
+  [[ -n "$host_ip" ]] || host_ip="$(detect_host_ip)"
 
   if [[ -z "$token" ]]; then
     local found=""
@@ -753,10 +768,23 @@ ensure_plex_boot_stable(){
 
     env_set "${RIVEN_ENV}" "PLEX_TOKEN" "${found}"
     env_set "${PLEX_ENV}" "PLEX_CLAIM" ""
+
+    # Apply compose env change (best effort)
     ( cd "${PLEX_COMPOSE}" && docker compose up -d ) >/dev/null 2>&1 || true
   else
     env_set "${PLEX_ENV}" "PLEX_CLAIM" ""
   fi
+}
+
+ensure_plex_boot_stable(){
+  if wait_plex_ready; then
+    log "Plex ready."
+    return 0
+  fi
+
+  log "Plex not ready after wait; restarting Plex once..."
+  docker restart plex >/dev/null 2>&1 || true
+  wait_plex_ready || log "Plex still not ready (continuing anyway)."
 }
 
 start_all(){
@@ -818,8 +846,8 @@ apply_riven_settings_api(){
       "enabled": true,
       "url": "http://${host_ip}:32400",
       "token": "${plex_token}"
-    }
-  }
+}
+}
 }
 JSON
 
@@ -834,8 +862,8 @@ JSON
       "enabled": true,
       "update_interval": 60,
       "rss": ["${rss}"]
-    }
-  }
+}
+}
 }
 JSON
 
